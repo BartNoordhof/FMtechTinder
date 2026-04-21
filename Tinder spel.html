@@ -1,0 +1,619 @@
+﻿<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>FM Matchmaker (Swipe Game)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            /* Hiermee voorkomen we ongewenst "pull to refresh" op telefoons, maar we staan wel normaal scrollen toe in de main container */
+            overscroll-behavior-y: none; 
+            background-color: #f8fafc;
+        }
+        .card-container {
+            perspective: 1000px;
+            position: relative;
+            flex: 1 1 auto; 
+            width: 100%;
+            max-width: 380px;
+            margin: 0 auto;
+            min-height: 320px; /* Verlaagd zodat het ook op hele kleine telefoons past */
+            max-height: 550px;
+        }
+        .swipe-card {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: black;
+            border-radius: 1.5rem;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden; 
+            cursor: grab;
+            transition: transform 0.3s ease, opacity 0.3s ease;
+            transform-origin: 50% 100%;
+            user-select: none;
+            touch-action: none; /* Voorkomt dat het scherm scrollt als je op de kaart zelf veegt */
+        }
+        .swipe-card.dragging {
+            transition: none;
+            cursor: grabbing;
+        }
+        
+        .card-stamp {
+            position: absolute;
+            top: 30px;
+            font-size: 2rem;
+            font-weight: 900;
+            text-transform: uppercase;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            border: 5px solid;
+            opacity: 0;
+            transition: opacity 0.2s;
+            z-index: 40;
+            letter-spacing: 2px;
+        }
+        .stamp-accept {
+            color: #10b981;
+            border-color: #10b981;
+            left: 15px;
+            transform: rotate(-15deg);
+        }
+        .stamp-reject {
+            color: #ef4444;
+            border-color: #ef4444;
+            right: 15px;
+            transform: rotate(15deg);
+        }
+
+        details > summary {
+            list-style: none;
+        }
+        details > summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .fade-in { animation: fadeIn 0.4s ease-out forwards; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .tinder-btn {
+            transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), background-color 0.2s;
+        }
+        .tinder-btn:active {
+            transform: scale(0.9);
+        }
+        
+        /* Custom scrollbar voor de tekst area's */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background-color: rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="text-slate-800 font-sans antialiased h-[100dvh] flex flex-col overflow-hidden">
+
+    <!-- Header -->
+    <header class="bg-indigo-900 text-white p-3 shadow-md z-20 flex-shrink-0">
+        <div class="max-w-md mx-auto flex items-center justify-center">
+            <span class="text-2xl mr-2">🔥</span>
+            <div>
+                <h1 class="text-lg font-bold leading-tight">FM Matchmaker</h1>
+                <p class="text-[10px] text-indigo-200 uppercase tracking-widest">Vind de juiste strategie</p>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content (Nu met overflow-y-auto zodat je kan scrollen op kleine schermen) -->
+    <main class="flex-grow w-full max-w-md mx-auto relative flex flex-col px-4 py-3 overflow-y-auto overflow-x-hidden">
+        
+        <!-- Intro Scherm -->
+        <div id="screen-intro" class="bg-white p-6 rounded-2xl shadow-lg text-center fade-in z-20 border border-slate-100 my-auto">
+            <div class="w-20 h-20 bg-gradient-to-tr from-indigo-500 to-purple-500 rounded-full flex items-center justify-center mx-auto mb-4 text-4xl shadow-md">💼</div>
+            <h2 class="text-2xl font-bold mb-3">Vind de perfecte match</h2>
+            <p class="text-slate-600 mb-6 text-sm leading-relaxed">
+                Lees eerst wat er speelt in het bedrijf <strong class="text-indigo-600">(De Context)</strong>. Daarna komen je collega's met hun wilde plannen voor de afdeling.
+                <br><br>
+                Maar let op: niet elk idee past bij het probleem!
+                <br><br>
+                <strong class="text-emerald-500">Swipe rechts (Like)</strong> als de collega snapt wat het bedrijf écht nodig heeft.<br>
+                <strong class="text-red-500">Swipe links (Nope)</strong> als het idee de plank compleet misslaat.
+            </p>
+            <button onclick="startGame()" class="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold py-4 px-6 rounded-full transition-all focus:ring-4 focus:ring-indigo-300 shadow-md text-lg transform hover:scale-[1.02] active:scale-95">
+                Start Missie 1
+            </button>
+        </div>
+
+        <!-- Overgangsscherm -->
+        <div id="screen-transition" class="hidden bg-white p-8 rounded-2xl shadow-lg text-center fade-in z-20 flex flex-col justify-center my-auto border border-slate-100">
+            <div class="text-6xl mb-4 animate-bounce" id="transition-icon">🔄</div>
+            <h2 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Volgende stap</h2>
+            <h3 class="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-purple-500 mb-2" id="transition-title">Laag X</h3>
+            <p class="text-xl font-bold text-slate-800 mb-4" id="transition-subtitle">Naam van de laag</p>
+            <div class="bg-indigo-50 p-4 rounded-xl border border-indigo-100 mb-8 text-sm text-indigo-800 font-medium" id="transition-desc">
+                Korte uitleg wat je in deze laag moet beoordelen.
+            </div>
+            <button onclick="startLayer()" class="w-full bg-indigo-900 hover:bg-indigo-800 text-white font-bold py-4 px-6 rounded-full transition-all shadow-md flex items-center justify-center transform hover:scale-[1.02] active:scale-95">
+                <span>Laat de ideeën maar komen!</span>
+            </button>
+        </div>
+
+        <!-- Game Scherm -->
+        <div id="screen-game" class="hidden flex-col h-full fade-in pb-2">
+            
+            <!-- Context Header -->
+            <details id="context-details" class="bg-white rounded-xl shadow-sm mb-3 border-l-4 border-indigo-500 flex-shrink-0 group" open>
+                <summary class="p-3 flex justify-between items-center cursor-pointer focus:outline-none bg-indigo-50/50 hover:bg-indigo-50 transition-colors">
+                    <span class="text-[11px] font-bold text-indigo-700 uppercase tracking-wider flex items-center">
+                        📋 Het Probleem <span class="ml-2 text-[9px] font-normal text-indigo-400 normal-case hidden sm:inline">(Klik om in/uit te klappen)</span>
+                    </span>
+                    <span class="text-indigo-500 transform transition-transform duration-200 group-open:rotate-180 text-sm">▼</span>
+                </summary>
+                <div class="px-3 pb-3 pt-2 border-t border-indigo-50">
+                    <p id="scenario-context" class="font-medium text-[12px] sm:text-[13px] leading-relaxed text-slate-700">Laden...</p>
+                </div>
+            </details>
+
+            <!-- Voortgang -->
+            <div class="flex justify-between items-center mb-2 px-2 flex-shrink-0">
+                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider" id="card-counter">Collega 1/9</span>
+                <div class="flex space-x-1" id="progress-dots">
+                    <!-- Dots -->
+                </div>
+            </div>
+
+            <!-- Swipe Area -->
+            <div class="card-container flex-grow mt-1" id="card-container">
+                <!-- Kaarten worden hier via JS geïnjecteerd -->
+            </div>
+
+            <!-- Swipe Knoppen (Onderkant) -->
+            <div class="pt-4 pb-2 flex justify-center gap-6 sm:gap-8 px-2 flex-shrink-0">
+                <button onclick="handleButtonSwipe('left')" class="tinder-btn w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-white border border-slate-200 text-red-500 flex items-center justify-center text-2xl sm:text-3xl shadow-[0_4px_15px_rgba(0,0,0,0.1)] hover:bg-red-50 hover:border-red-200 focus:outline-none focus:ring-4 focus:ring-red-100">
+                    ✕
+                </button>
+                <button onclick="handleButtonSwipe('right')" class="tinder-btn w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-white border border-slate-200 text-emerald-500 flex items-center justify-center text-2xl sm:text-3xl shadow-[0_4px_15px_rgba(0,0,0,0.1)] hover:bg-emerald-50 hover:border-emerald-200 focus:outline-none focus:ring-4 focus:ring-emerald-100">
+                    ♥
+                </button>
+            </div>
+        </div>
+
+        <!-- Resultaten Scherm -->
+        <div id="screen-results" class="hidden bg-white p-6 rounded-2xl shadow-lg text-center fade-in z-20 border border-slate-100 mt-2">
+            <h2 id="result-title" class="text-3xl font-black mb-2">It's a Match!</h2>
+            <div class="text-5xl mb-2" id="result-emoji">🥂</div>
+            <p id="result-score" class="text-base sm:text-lg font-bold text-slate-700 mb-6 bg-slate-100 inline-block px-4 py-1 rounded-full mt-2">Je score: 0/9 correct.</p>
+            
+            <div class="text-left mb-6">
+                <h3 class="font-bold text-slate-800 border-b-2 border-indigo-100 pb-2 mb-4">Met wie had je een match?</h3>
+                <ul id="feedback-list" class="space-y-4 text-sm">
+                    <!-- Feedback items -->
+                </ul>
+            </div>
+
+            <button onclick="nextScenario()" id="btn-next-scenario" class="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold py-4 px-6 rounded-full transition-all shadow-md transform hover:scale-[1.02] active:scale-95">
+                Volgende Casus
+            </button>
+        </div>
+
+    </main>
+
+    <script>
+        // Fallback image voor als een Unsplash foto offline is gehaald
+        const FALLBACK_IMAGE = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=600&q=80";
+
+        // --- GAME DATA ---
+        // Volledig uitgewerkt: 2 scenario's met 18 unieke, handmatig gekozen professionele portretten!
+        const gameData = [
+            {
+                id: 1,
+                focus: "people",
+                context: "Een hippe tech-startup groeit superhard. Het is heel lastig om goed personeel te vinden en te houden. De medewerkers eisen een toffe, inspirerende werkplek waar ze zich goed voelen en makkelijk kunnen flexwerken.",
+                layers: [
+                    {
+                        layerNum: 2,
+                        name: "Strategie",
+                        desc: "Welke algemene rol (strategie) moet Facility Management hier aannemen?",
+                        icon: "🧭",
+                        cards: [
+                            { name: "Mark", age: 45, role: "Finance Director", text: "Besparen, besparen, besparen! Maak dat kantoor zo goedkoop en efficiënt mogelijk, we verbranden te veel geld!", image: "https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=600&q=80", type: "process", explanation: "Mark wil alleen maar op geld letten. Dat jaagt het schaarse talent in deze startup juist weg." },
+                            { name: "Sarah", age: 32, role: "HR Manager", text: "Onze mensen zijn goud waard! We moeten hén op nummer 1 zetten. Zorg dat talent hier écht wil zijn.", image: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=600&q=80", type: "people", explanation: "Helemaal goed! Om personeel te houden in een krappe markt, moet je je als FM richten op de mensen." },
+                            { name: "Emma", age: 28, role: "Klimaat Adviseur", text: "Jongens, de ijskappen smelten! Onze enige strategie moet zijn om dit pand 100% groen en energieneutraal te maken.", image: "https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=600&q=80", type: "place", explanation: "Emma's plan is nobel, maar duurzaamheid lost het grote, acute personeelsprobleem van deze startup niet op." }
+                        ]
+                    },
+                    {
+                        layerNum: 3,
+                        name: "Toegevoegde Waarde",
+                        desc: "Wat gaan we precies doen om waarde toe te voegen voor het bedrijf?",
+                        icon: "💎",
+                        cards: [
+                            { name: "Daan", age: 35, role: "Inkoop Specialist", text: "Laten we alleen nog maar tweedehands meubilair kopen en ons afval super streng scheiden. Geen plastic meer!", image: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=600&q=80", type: "place", explanation: "Daan is groen bezig, maar hiermee trek je geen zeldzame programmeurs of designers aan." },
+                            { name: "Linda", age: 50, role: "Operations Manager", text: "Ik wil superstrakke regels en protocollen voor de schoonmaak. Dan worden er geen dure fouten meer gemaakt.", image: "https://images.unsplash.com/photo-1551836022-d5d88e9218df?auto=format&fit=crop&w=600&q=80", type: "process", explanation: "Linda's regels besparen geld, maar ze maken de sfeer op kantoor echt niet inspirerend voor het talent." },
+                            { name: "Karim", age: 29, role: "Community Manager", text: "We fiksen een fantastische lunch, we bouwen een in-house gym en zetten overal gezellige zithoekjes neer!", image: "https://images.unsplash.com/photo-1531427186611-ecfd6d936c79?auto=format&fit=crop&w=600&q=80", type: "people", explanation: "Precies! Dit idee van Karim biedt de extra's die werknemers blij maken en aan je bedrijf binden." }
+                        ]
+                    },
+                    {
+                        layerNum: 4,
+                        name: "Eigen Capaciteit",
+                        desc: "Wat moet ons eigen FM-team kunnen of leren om dit te fixen?",
+                        icon: "⚙️",
+                        cards: [
+                            { name: "Sophie", age: 38, role: "Talent Coach", text: "FM en HR moeten besties worden! En stuur die receptie direct op een cursus 'extreme gastvrijheid'.", image: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=600&q=80", type: "people", explanation: "Sophie snapt het: naadloze samenwerking met HR en gastvrijheid zijn dé vaardigheden om een topervaring te bouwen." },
+                            { name: "Ruud", age: 52, role: "Contractbeheerder", text: "Stuur het hele FM-team op onderhandelingstraining. We moeten de leveranciers helemaal uit gaan knijpen.", image: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=600&q=80", type: "process", explanation: "Ruud's obsessie met onderhandelen past bij een kosten-strategie, niet bij het creëren van een fijne sfeer." },
+                            { name: "Julia", age: 26, role: "Technisch Specialist", text: "We moeten het FM-team omscholen met technische trainingen over ingewikkelde warmtepompen en isolatie.", image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80", type: "place", explanation: "Julia's kennis over warmtepompen is prachtig, maar het helpt je team niet om talent gelukkiger te maken." }
+                        ]
+                    }
+                ]
+            },
+            {
+                id: 2,
+                focus: "place",
+                context: "De overheid heeft nieuwe, super strenge milieuregels gemaakt. De bazen van de fabriek eisen daarom keihard: over 3 jaar moeten ál onze gebouwen 100% klimaatneutraal zijn.",
+                layers: [
+                    {
+                        layerNum: 2,
+                        name: "Strategie",
+                        desc: "Welke algemene rol (strategie) moet Facility Management hier aannemen?",
+                        icon: "🧭",
+                        cards: [
+                            { name: "Bert", age: 55, role: "Plant Manager", text: "FM hoeft alleen maar te zorgen dat de lampen branden en de storingen in de fabriek worden opgelost. Punts uit.", image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=600&q=80", type: "process", explanation: "Bert wil de boel draaiende houden, maar negeert de keiharde eis van de directie over het klimaat." },
+                            { name: "Lisa", age: 29, role: "Feestcommissie", text: "Werken hier is zoooo saai! Laten we van FM de 'feestcommissie' maken, dan wordt iedereen weer blij!", image: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=600&q=80", type: "people", explanation: "Feestjes zijn gezellig Lisa, maar het vergroenen van de fabriek is nu echt even belangrijker." },
+                            { name: "Johan", age: 41, role: "Directie", text: "Geen smoesjes. FM pakt hier de absolute leiding. Jullie worden dé grote bazen van de vergroening.", image: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=600&q=80", type: "place", explanation: "Helemaal correct. FM moet de regie in de fysieke omgeving (Place) pakken om de milieuregels te halen." }
+                        ]
+                    },
+                    {
+                        layerNum: 3,
+                        name: "Toegevoegde Waarde",
+                        desc: "Wat gaan we precies doen om waarde toe te voegen voor het bedrijf?",
+                        icon: "💎",
+                        cards: [
+                            { name: "Sanne", age: 25, role: "Office Manager", text: "Laten we hele dure espresso-machines kopen en een hippe chill-room bouwen voor het personeel!", image: "https://images.unsplash.com/photo-1517365830460-955ce3ccd263?auto=format&fit=crop&w=600&q=80", type: "people", explanation: "Sanne's chill-room is leuk, maar het haalt geen grammetje CO2 uit de lucht." },
+                            { name: "Ali", age: 48, role: "Duurzaamheidsbaas", text: "Onze focus is meedogenloos: nul CO2-uitstoot, van het gas af en we kopen alleen nog groene stroom.", image: "https://images.unsplash.com/photo-1566492031525-8783e742171f?auto=format&fit=crop&w=600&q=80", type: "place", explanation: "Juist! Ali noemt de harde, fysieke doelen (Place) die horen bij een klimaat-strategie." },
+                            { name: "Peter", age: 39, role: "IT Coördinator", text: "Bouw even een handig appje waarmee kapotte lampen sneller kunnen worden gemeld, dat is makkelijk.", image: "https://images.unsplash.com/photo-1519345182560-3f2917c472ef?auto=format&fit=crop&w=600&q=80", type: "process", explanation: "Peter's appje voor storingen is leuk, maar het doet niets om de grote klimaatcrisis van het bedrijf op te lossen." }
+                        ]
+                    },
+                    {
+                        layerNum: 4,
+                        name: "Eigen Capaciteit",
+                        desc: "Wat moet ons eigen FM-team kunnen of leren om dit te fixen?",
+                        icon: "⚙️",
+                        cards: [
+                            { name: "Maria", age: 34, role: "Data Analist", text: "We moeten onszelf direct omscholen. We moeten álles leren over slimme energiedata, sensoren en isolatie.", image: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=600&q=80", type: "place", explanation: "Bingo Maria. Zonder technische data en kennis (Capaciteit) kun je onmogelijk een fabriek vergroenen." },
+                            { name: "Tom", age: 22, role: "Stagiair", text: "Stuur het hele team op de cursus 'klantvriendelijkheid', zodat iedereen altijd vrolijk blijft lachen!", image: "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=600&q=80", type: "people", explanation: "Tom's positiviteit is goud waard, maar met een glimlach alleen maak je geen fabriek klimaatneutraal." },
+                            { name: "Henk", age: 60, role: "Proces Verbeteraar", text: "We moeten overbodige administratie wegsnijden met Lean-management, zodat jullie veel sneller werken.", image: "https://images.unsplash.com/photo-1558222218-b7b54eede3f3?auto=format&fit=crop&w=600&q=80", type: "process", explanation: "Efficiënt werken is mooi meegenomen Henk, maar Lean-management is hier niet de sleutel tot verduurzaming." }
+                        ]
+                    }
+                ]
+            }
+        ];
+
+        // --- STATE VARIABLES ---
+        let currentScenarioIndex = 0;
+        let currentLayerIndex = 0; 
+        let currentCardIndex = 0;  
+        let globalCardCount = 0;   
+        let currentLayerDeck = [];
+        let playerResults = [];
+
+        const TOTAL_CARDS_PER_SCENARIO = 9;
+
+        // --- DOM ELEMENTS ---
+        const screens = {
+            intro: document.getElementById('screen-intro'),
+            transition: document.getElementById('screen-transition'),
+            game: document.getElementById('screen-game'),
+            results: document.getElementById('screen-results')
+        };
+        const container = document.getElementById('card-container');
+        let currentCardEl = null;
+
+        // --- GESTURE STATE ---
+        let isDragging = false;
+        let startX = 0;
+        let currentX = 0;
+        const SWIPE_THRESHOLD = 80;
+
+        // --- LOGICA ---
+        function switchScreen(screenName) {
+            Object.values(screens).forEach(s => s.classList.add('hidden'));
+            screens[screenName].classList.remove('hidden');
+            
+            // Zorg dat we na een schermwissel bovenaan beginnen met scrollen (handig op mobiel)
+            document.querySelector('main').scrollTo(0,0);
+        }
+
+        function startGame() {
+            currentScenarioIndex = 0;
+            initScenario();
+        }
+
+        function nextScenario() {
+            currentScenarioIndex++;
+            if(currentScenarioIndex >= gameData.length) {
+                screens.results.innerHTML = `
+                    <div class="py-10">
+                        <div class="text-7xl mb-4">🏆</div>
+                        <h2 class="text-3xl font-black mb-4 text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-purple-500">Master Matcher!</h2>
+                        <p class="text-[15px] text-slate-600 mb-8 leading-relaxed">Je hebt succesvol de bullshit-ideeën eruit gefilterd en de strategische rode draad vastgehouden in alle scenario's.</p>
+                        <button onclick="location.reload()" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-4 px-6 rounded-full shadow-lg text-lg transform hover:scale-105 transition-all">Speel Opnieuw</button>
+                    </div>
+                `;
+            } else {
+                initScenario();
+            }
+        }
+
+        function initScenario() {
+            const scenario = gameData[currentScenarioIndex];
+            document.getElementById('scenario-context').textContent = scenario.context;
+            
+            playerResults = [];
+            currentLayerIndex = 0;
+            globalCardCount = 0;
+            
+            document.getElementById('context-details').open = true;
+            
+            showTransitionScreen();
+        }
+
+        function showTransitionScreen() {
+            const layerData = gameData[currentScenarioIndex].layers[currentLayerIndex];
+            
+            document.getElementById('transition-icon').textContent = layerData.icon;
+            document.getElementById('transition-title').textContent = `Laag ${layerData.layerNum}`;
+            document.getElementById('transition-subtitle').textContent = layerData.name;
+            document.getElementById('transition-desc').textContent = layerData.desc;
+            
+            switchScreen('transition');
+        }
+
+        function startLayer() {
+            const layerData = gameData[currentScenarioIndex].layers[currentLayerIndex];
+            
+            currentLayerDeck = [...layerData.cards].sort(() => Math.random() - 0.5);
+            currentCardIndex = 0;
+            
+            if (currentLayerIndex > 0) {
+                document.getElementById('context-details').open = false;
+            }
+            
+            updateProgress();
+            switchScreen('game');
+            renderCard();
+        }
+
+        function updateProgress() {
+            document.getElementById('card-counter').textContent = `Collega ${globalCardCount + 1}/${TOTAL_CARDS_PER_SCENARIO}`;
+            const dotsContainer = document.getElementById('progress-dots');
+            dotsContainer.innerHTML = '';
+            
+            for(let i=0; i<TOTAL_CARDS_PER_SCENARIO; i++) {
+                const dot = document.createElement('div');
+                dot.className = `w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${i === globalCardCount ? 'bg-indigo-600 w-3 sm:w-4 transition-all' : (i < globalCardCount ? 'bg-emerald-400' : 'bg-slate-200')}`;
+                dotsContainer.appendChild(dot);
+            }
+        }
+
+        function renderCard() {
+            container.innerHTML = '';
+            
+            const cardData = currentLayerDeck[currentCardIndex];
+            const layerData = gameData[currentScenarioIndex].layers[currentLayerIndex];
+            
+            const cardEl = document.createElement('div');
+            cardEl.className = 'swipe-card shadow-[0_20px_50px_rgba(0,0,0,0.3)]';
+            
+            // Layout is geoptimaliseerd zodat de tekst iets compacter is en altijd goed in beeld past
+            cardEl.innerHTML = `
+                <img src="${cardData.image}" onerror="this.onerror=null; this.src='${FALLBACK_IMAGE}';" draggable="false" alt="${cardData.name}" class="absolute inset-0 w-full h-full object-cover z-0 pointer-events-none" />
+                
+                <div class="absolute inset-0 bg-gradient-to-b from-black/10 via-black/30 to-black/95 z-10 pointer-events-none"></div>
+                
+                <div class="card-stamp stamp-accept" id="stamp-accept">LIKE</div>
+                <div class="card-stamp stamp-reject" id="stamp-reject">NOPE</div>
+                
+                <div class="absolute inset-x-0 bottom-0 z-20 flex flex-col p-4 sm:p-5 pb-5 text-white h-auto justify-end">
+                    
+                    <div class="mb-2">
+                        <span class="inline-block bg-white/20 backdrop-blur-md text-white border border-white/30 text-[9px] font-bold px-2.5 py-1 rounded-full uppercase tracking-widest shadow-sm">
+                            Laag ${layerData.layerNum}: ${layerData.name}
+                        </span>
+                    </div>
+                    
+                    <h3 class="text-2xl sm:text-3xl font-black mb-0.5 drop-shadow-md flex items-end">
+                        ${cardData.name} <span class="text-lg font-normal ml-2 opacity-90">${cardData.age}</span>
+                    </h3>
+                    
+                    <div class="flex items-center text-indigo-200 text-[11px] sm:text-xs font-semibold uppercase tracking-wider mb-2">
+                        <span class="mr-1">🏢</span> ${cardData.role}
+                    </div>
+                    
+                    <p class="text-[13px] sm:text-[15px] font-medium leading-tight sm:leading-snug drop-shadow-lg text-slate-100">
+                        "${cardData.text}"
+                    </p>
+                </div>
+            `;
+
+            container.appendChild(cardEl);
+            currentCardEl = cardEl;
+
+            cardEl.addEventListener('mousedown', dragStart);
+            cardEl.addEventListener('touchstart', dragStart, {passive: true});
+            document.addEventListener('mousemove', drag);
+            document.addEventListener('touchmove', drag, {passive: false});
+            document.addEventListener('mouseup', dragEnd);
+            document.addEventListener('touchend', dragEnd);
+        }
+
+        // --- SWIPE MECHANICS ---
+        function dragStart(e) {
+            isDragging = true;
+            startX = e.type.includes('mouse') ? e.pageX : e.touches[0].clientX;
+            currentCardEl.classList.add('dragging');
+        }
+
+        function drag(e) {
+            if (!isDragging) return;
+            // Omdat we touch-action:none op de card hebben staan, hoeven we preventDefault niet altijd te triggeren. 
+            // Dit voorkomt bugs met scrollen op sommige mobiele apparaten.
+            if (e.cancelable) e.preventDefault(); 
+
+            const currentPosition = e.type.includes('mouse') ? e.pageX : e.touches[0].clientX;
+            currentX = currentPosition - startX;
+            
+            const rotate = currentX * 0.05;
+            currentCardEl.style.transform = `translateX(${currentX}px) rotate(${rotate}deg)`;
+
+            const acceptOpacity = currentX > 20 ? Math.min(currentX / SWIPE_THRESHOLD, 1) : 0;
+            const rejectOpacity = currentX < -20 ? Math.min(Math.abs(currentX) / SWIPE_THRESHOLD, 1) : 0;
+            
+            document.getElementById('stamp-accept').style.opacity = acceptOpacity;
+            document.getElementById('stamp-reject').style.opacity = rejectOpacity;
+        }
+
+        function dragEnd(e) {
+            if (!isDragging) return;
+            isDragging = false;
+            currentCardEl.classList.remove('dragging');
+
+            if (currentX > SWIPE_THRESHOLD) {
+                processSwipe('right');
+            } else if (currentX < -SWIPE_THRESHOLD) {
+                processSwipe('left');
+            } else {
+                currentCardEl.style.transform = 'translateX(0px) rotate(0deg)';
+                document.getElementById('stamp-accept').style.opacity = 0;
+                document.getElementById('stamp-reject').style.opacity = 0;
+            }
+            currentX = 0;
+        }
+
+        function handleButtonSwipe(direction) {
+            if(!currentCardEl) return;
+            
+            const endX = direction === 'right' ? window.innerWidth : -window.innerWidth;
+            const rotate = direction === 'right' ? 20 : -20;
+            
+            currentCardEl.style.transition = 'transform 0.5s ease-out';
+            currentCardEl.style.transform = `translateX(${endX}px) rotate(${rotate}deg)`;
+            
+            if(direction === 'right') document.getElementById('stamp-accept').style.opacity = 1;
+            if(direction === 'left') document.getElementById('stamp-reject').style.opacity = 1;
+
+            document.querySelectorAll('button').forEach(btn => btn.disabled = true);
+
+            setTimeout(() => {
+                document.querySelectorAll('button').forEach(btn => btn.disabled = false);
+                processSwipe(direction);
+            }, 300);
+        }
+
+        function processSwipe(direction) {
+            document.removeEventListener('mousemove', drag);
+            document.removeEventListener('touchmove', drag);
+            document.removeEventListener('mouseup', dragEnd);
+            document.removeEventListener('touchend', dragEnd);
+
+            const cardData = currentLayerDeck[currentCardIndex];
+            const scenarioFocus = gameData[currentScenarioIndex].focus;
+            const layerData = gameData[currentScenarioIndex].layers[currentLayerIndex];
+            
+            const playerAccepted = direction === 'right';
+            const shouldAccept = cardData.type === scenarioFocus;
+            const isCorrect = playerAccepted === shouldAccept;
+
+            playerResults.push({
+                layerName: `Laag ${layerData.layerNum}: ${layerData.name}`,
+                card: cardData,
+                accepted: playerAccepted,
+                correct: isCorrect
+            });
+
+            currentCardIndex++;
+            globalCardCount++;
+            
+            if (currentCardIndex < currentLayerDeck.length) {
+                updateProgress();
+                renderCard();
+            } else {
+                currentLayerIndex++;
+                if (currentLayerIndex < gameData[currentScenarioIndex].layers.length) {
+                    showTransitionScreen();
+                } else {
+                    endScenario();
+                }
+            }
+        }
+
+        // --- EVALUATION ---
+        function endScenario() {
+            const correctCount = playerResults.filter(r => r.correct).length;
+            
+            document.getElementById('result-score').textContent = `Score: ${correctCount} van de ${TOTAL_CARDS_PER_SCENARIO} collega's goed beoordeeld.`;
+            
+            if(correctCount === TOTAL_CARDS_PER_SCENARIO) {
+                document.getElementById('result-title').textContent = "It's a Match!";
+                document.getElementById('result-title').className = "text-4xl font-black mb-2 text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-emerald-600";
+                document.getElementById('result-emoji').textContent = "🔥";
+            } else if (correctCount >= 6) {
+                document.getElementById('result-title').textContent = "Niet slecht...";
+                document.getElementById('result-title').className = "text-4xl font-black mb-2 text-indigo-600";
+                document.getElementById('result-emoji').textContent = "👀";
+            } else {
+                document.getElementById('result-title').textContent = "Swipe Fail!";
+                document.getElementById('result-title').className = "text-4xl font-black mb-2 text-red-500";
+                document.getElementById('result-emoji').textContent = "💔";
+            }
+
+            const feedbackList = document.getElementById('feedback-list');
+            feedbackList.innerHTML = '';
+            
+            let currentLayerTracker = "";
+
+            playerResults.forEach(res => {
+                if (res.layerName !== currentLayerTracker) {
+                    const header = document.createElement('div');
+                    header.className = "font-bold text-slate-400 mt-6 mb-2 text-[10px] uppercase tracking-widest border-b border-slate-100 pb-1";
+                    header.textContent = res.layerName;
+                    feedbackList.appendChild(header);
+                    currentLayerTracker = res.layerName;
+                }
+
+                const li = document.createElement('li');
+                li.className = `p-4 rounded-xl border ${res.correct ? 'bg-emerald-50/50 border-emerald-100' : 'bg-red-50/50 border-red-100'}`;
+                
+                const actionText = res.accepted ? "<span class='text-emerald-600 font-bold uppercase text-[10px] bg-emerald-100 px-2 py-0.5 rounded'>Jij swipete Like</span>" : "<span class='text-red-500 font-bold uppercase text-[10px] bg-red-100 px-2 py-0.5 rounded'>Jij swipete Nope</span>";
+                const icon = res.correct ? "✅" : "❌";
+                
+                li.innerHTML = `
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="font-bold text-slate-800 text-sm flex items-center">
+                           <img src="${res.card.image}" onerror="this.onerror=null; this.src='${FALLBACK_IMAGE}';" class="w-6 h-6 rounded-full object-cover mr-2" /> ${res.card.name} (${res.card.role})
+                        </span>
+                        ${actionText}
+                    </div>
+                    <div class="mb-2 text-[13px] text-slate-700 italic border-l-2 border-indigo-200 pl-2 bg-white/50 py-1 rounded-r">
+                        "${res.card.text}"
+                    </div>
+                    <div class="font-medium text-slate-600 text-[13px] leading-relaxed pt-1">
+                        ${icon} ${res.card.explanation}
+                    </div>
+                `;
+                feedbackList.appendChild(li);
+            });
+
+            switchScreen('results');
+        }
+    </script>
+</body>
+</html>
